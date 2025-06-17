@@ -25,38 +25,38 @@ const uint8_t carita_feliz[] = {0x00, 0x14, 0x20, 0x40, 0x40, 0x20, 0x14, 0x00};
 const uint8_t carita_triste[] = {0x00, 0x64, 0x10, 0x10, 0x10, 0x10, 0x64, 0x00};
 const uint8_t visto[] = {0x00, 0x20, 0x40, 0x20, 0x10, 0x08, 0x04, 0x00};
 
+// Declaración de la función delay_ms() para que esté disponible en todo el código
+void delay_ms(uint16_t ms) {
+    for (uint16_t i = 0; i < ms; i++) {
+        _delay_ms(1);  // Llamar a la función _delay_ms() de AVR
+    }
+}
+
 void init_matriz() {
     DDRD = 0xFF;  // Establece el puerto D como salida (Filas)
     DDRB = 0xFF;  // Establece el puerto B como salida (Columnas)
 }
 
 void limpiar_matriz() {
-    PORTD = 0xFF;
-    PORTB = 0xFF;
+    PORTD = 0x00;  // Apaga todas las filas (en ánodo común, 0 activa)
+    PORTB = 0xFF;  // Apaga todas las columnas (en ánodo común, 1 desactiva)
 }
 
 void mostrar_pixel(uint8_t fila, uint8_t columna) {
     if (fila < 8 && columna < 8) {
-        PORTB = ~(1 << columna);  // Activar la columna (inverso para ánodo común)
-        PORTD = ~(1 << fila);  // Activar la fila (inverso para ánodo común)
-        _delay_ms(10);  // Retardo para que el pixel se quede visible
+        PORTB = ~(1 << columna);  // Activar la columna (poner 0 para ánodo común)
+        PORTD = (1 << fila);      // Activar la fila (poner 1 para ánodo común)
+        delay_ms(10);  // Retardo para que el pixel se quede visible
         limpiar_matriz();
     }
 }
 
-void seleccionar_nivel(uint8_t nivel) {
-    switch (nivel) {
-        case 1:
-            velocidad_actual = VELOCIDAD_FACIL;
-            break;
-        case 2:
-            velocidad_actual = VELOCIDAD_MEDIA;
-            break;
-        case 3:
-            velocidad_actual = VELOCIDAD_DIFICIL;
-            break;
-        default:
-            velocidad_actual = VELOCIDAD_FACIL;
+void mostrar_carita(const uint8_t* carita) {
+    for (uint8_t i = 0; i < 8; i++) {
+        // Mostrar cada fila de la carita en la matriz 8x8
+        PORTB = carita[i];
+        delay_ms(200);
+        limpiar_matriz();
     }
 }
 
@@ -65,36 +65,9 @@ void mostrar_puntaje(uint16_t puntaje) {
     for (uint8_t i = 0; i < 5; i++) {
         limpiar_matriz();
         mostrar_pixel(0, col_puntaje);
-        _delay_ms(150);
+        delay_ms(150);
         limpiar_matriz();
-        _delay_ms(150);
-    }
-}
-
-void delay_variable(uint16_t ms) {
-    // Divide el retardo en ms unitarios para evitar error _delay_ms()
-    for (uint16_t i = 0; i < ms; i++) {
-        _delay_ms(1);
-    }
-}
-
-void init_adc() {
-    ADMUX = (1 << REFS0);
-    ADCSRA = (1 << ADEN) | (1 << ADPS2) | (1 << ADPS1) | (1 << ADPS0);
-}
-
-uint16_t leer_adc() {
-    ADCSRA |= (1 << ADSC);
-    while (ADCSRA & (1 << ADSC));
-    return ADC;
-}
-
-void mostrar_carita(const uint8_t* carita) {
-    for (uint8_t i = 0; i < 8; i++) {
-        // Mostrar cada fila de la carita en la matriz 8x8
-        PORTB = carita[i];
-        _delay_ms(200);
-        limpiar_matriz();
+        delay_ms(150);
     }
 }
 
@@ -102,8 +75,13 @@ void nave() {
     // Representación de la nave en la matriz como un triángulo
     uint8_t nave[] = {0x01, 0x03, 0x07, 0x03, 0x01};  // Triángulo simple en la matriz
     limpiar_matriz();  // Limpiar la matriz antes de mostrar la nave
-    PORTB = nave[nave_pos_x];  // Mostrar la nave en la posición X
-    _delay_ms(200);  // Mostrar la nave durante 200 ms
+    for (uint8_t i = 0; i < 5; i++) {
+        if (nave_pos_y == i) {
+            PORTB = nave[i];  // Mostrar la nave en la posición Y
+            mostrar_pixel(i, nave_pos_x); // Mostrar en la fila y columna de la nave
+            delay_ms(200);  // Mostrar la nave durante 200 ms
+        }
+    }
 }
 
 void controlar_nave() {
@@ -111,7 +89,7 @@ void controlar_nave() {
         nave_pos_y--;  // Mover la nave hacia arriba
     }
     if (PINC & (1 << botonAbajo) && nave_pos_y < 7) {
-        nave_pos_y++;  // Mover la nave hacia abajo
+        nave_pos_y++;  // Mover la nave hacia abajo (pero no más allá de la última fila)
     }
     if (PINC & (1 << botonIzquierda) && nave_pos_x > 0) {
         nave_pos_x--;  // Mover la nave a la izquierda
@@ -121,28 +99,29 @@ void controlar_nave() {
     }
 }
 
-void crear_piedra(uint8_t* piedras, uint8_t *pos_x, uint8_t *pos_y) {
-    // Genera la posición aleatoria de la piedra
+void crear_piedra(uint8_t* piedras, uint8_t *pos_x) {
+    // Genera la posición aleatoria de la piedra en la primera fila
     *pos_x = rand() % 8;  // Posición aleatoria en X (columna)
-    *pos_y = 0;  // Inicia desde la fila 0 (parte superior)
-    piedras[*pos_x] = 0x01 << *pos_x;  // Activa la columna correspondiente
+    piedras[*pos_x] = 0x80;  // Activa la columna correspondiente en la fila 0
 }
 
-void mover_piedra(uint8_t* piedras, uint8_t* pos_y) {
+void mover_piedra(uint8_t* piedras) {
+    uint8_t desplazamiento_aleatorio;
     for (uint8_t i = 0; i < 8; i++) {
         if (piedras[i] != 0) {
-            // Desplaza la piedra hacia abajo
-            PORTB = piedras[i];  // Mostrar la piedra
-            limpiar_matriz();  // Limpiar la matriz
-            _delay_ms(velocidad_actual);  // Espera por el nivel
-            piedras[i] = 0;  // Borrar la piedra de la posición anterior
-            if (*pos_y < 7) {
-                *pos_y = *pos_y + 1;  // Mueve la piedra hacia abajo
-            } else {
-                // Si la piedra llega al fondo, reiniciar en la parte superior
-                *pos_y = 0;
+            // Desplazar la piedra hacia abajo en la columna i
+            for (uint8_t j = 0; j < 7; j++) {
+                mostrar_pixel(j + 1, i);  // Mueve la piedra hacia abajo
+                limpiar_matriz();
+                delay_ms(velocidad_actual);  // Control del tiempo de retardo según el nivel
             }
-            piedras[i] = 0x01 << *pos_y;  // Actualiza la posición de la piedra
+            piedras[i] = 0;  // Borrar la piedra de la posición anterior
+
+            // Si la piedra llega a la última fila, reiniciar en la parte superior
+            desplazamiento_aleatorio = rand() % 3 - 1;  // Aleatorio entre -1, 0 o 1
+            if (i + desplazamiento_aleatorio >= 0 && i + desplazamiento_aleatorio < 8) {
+                piedras[i + desplazamiento_aleatorio] = 0x80;
+            }
         }
     }
 }
@@ -159,6 +138,23 @@ void esquivar() {
             nivel = 1;  // Reiniciar nivel
         }
     }
+
+    // Aumentar la velocidad de las piedras según el nivel
+    switch (nivel) {
+        case 1:
+            velocidad_actual = VELOCIDAD_FACIL;
+            break;
+        case 2:
+            velocidad_actual = VELOCIDAD_MEDIA;
+            break;
+        case 3:
+            velocidad_actual = VELOCIDAD_DIFICIL;
+            break;
+        default:
+            velocidad_actual = VELOCIDAD_FACIL;
+            break;
+    }
+
     // Incrementar puntaje dependiendo del nivel
     if (nivel == 1) {
         puntaje += 200;
@@ -172,7 +168,7 @@ void esquivar() {
 void game_over() {
     // Función para cuando el jugador pierda
     mostrar_puntaje(puntaje);  // Muestra el puntaje actual
-    _delay_ms(2000);  // Esperar 2 segundos
+    delay_ms(2000);  // Esperar 2 segundos
     mostrar_carita(carita_triste);  // Muestra carita triste
     vidas--;  // Restar vida
     if (vidas == 0) {
@@ -184,16 +180,42 @@ void game_over() {
     }
 }
 
+void iniciar_juego() {
+    // Esperar a que el botón de inicio sea presionado (botón Arriba)
+    while (!(PINC & (1 << botonArriba))) {
+        // Espera activa hasta que el botón de inicio sea presionado
+        limpiar_matriz();
+        delay_ms(100);
+    }
+    delay_ms(2000);  // Esperar 2 segundos antes de empezar el juego
+    limpiar_matriz();
+    nave();  // Mostrar la nave
+    delay_ms(2000);  // Mostrar la nave durante 2 segundos sin movimiento
+}
+
+void actualizar_juego() {
+    nave();  // Mostrar la nave
+    controlar_nave();  // Controlar la nave con los botones
+
+    // Generar nuevas piedras y moverlas
+    static uint8_t piedras[8] = {0};  // Almacena las piedras en las columnas
+    static uint8_t pos_x = 0;
+
+    crear_piedra(piedras, &pos_x);  // Crear una nueva piedra aleatoria
+    mover_piedra(piedras);  // Mover las piedras
+
+    esquivar();  // Verificar si se esquivaron piedras
+}
+
 int main() {
     init_matriz();
-    uint8_t piedras[8] = {0};  // Almacena las piedras en las columnas
-    uint8_t pos_x = 0, pos_y = 0;
+
+    // Esperar hasta que se presione el botón de inicio
+    iniciar_juego();
+    
     while (1) {
-        nave();  // Mostrar la nave
-        controlar_nave();  // Controlar la nave con los botones
-        crear_piedra(piedras, &pos_x, &pos_y);  // Crear una nueva piedra
-        mover_piedra(piedras, &pos_y);  // Mover las piedras
-        esquivar();  // Verificar si se esquivaron piedras
+        actualizar_juego();  // Llamada a la función que actualiza la nave y las piedras
+        
         if (vidas == 0) {
             game_over();  // Si el jugador ha perdido, mostrar Game Over
         }
