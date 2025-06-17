@@ -1,0 +1,189 @@
+#include <avr/io.h>
+#include <util/delay.h>
+
+#define F_CPU 8000000
+
+// Definición de botones en puerto C (PC0-PC3)
+#define BUTTON0 (1 << PC0)
+#define BUTTON1 (1 << PC1)
+#define BUTTON2 (1 << PC2)
+#define BUTTON3 (1 << PC3)
+
+// Máscara para columnas de la matriz (PORTD)
+static unsigned char mascaraColumnas[8] = {1, 2, 4, 8, 16, 32, 64, 128};
+
+// Definición de los cuadros para la animación de una persona caminando
+static unsigned char cuadroCaminata1[8] = {0x00, 0x10, 0x88, 0x7F, 0x2B, 0xC8, 0x04, 0x00};
+static unsigned char cuadroCaminata2[8] = {0x10, 0x48, 0x68, 0x3F, 0x4B, 0x88, 0x0C, 0x00};
+
+// Definición del mensaje completo (en formato de matriz de 8x13)
+static unsigned char mensajeCompleto[104] = {
+    0x00,0x72,0x42,0x7E,0x7E,0x02,0x02,0x00,
+    0x00,0x7C,0x7E,0x12,0x12,0x7E,0x7C,0x00,
+    0x00,0x00,0x42,0x7E,0x7E,0x42,0x00,0x00,
+    0x00,0x7E,0x7C,0x08,0x08,0x7C,0x7E,0x00,
+    0x00,0x7E,0x7E,0x5A,0x5A,0x5A,0x5A,0x00,
+    0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, 
+    0x00,0x7E,0x7E,0x5A,0x5A,0x5A,0x5A,0x00,
+    0x00,0x4E,0x4E,0x5A,0x5A,0x72,0x72,0x00,
+    0x00,0x7E,0x7E,0x7E,0x42,0x42,0x42,0x00,
+    0x00,0x7C,0x7E,0x12,0x12,0x7E,0x7C,0x00,
+    0x00,0x00,0x7E,0x7E,0x40,0x40,0x00,0x00,
+    0x00,0x7C,0x7E,0x12,0x12,0x7E,0x7C,0x00,
+    0x41,0x7E,0x44,0x08,0x08,0x44,0x7E,0x41
+};
+
+// Buffer temporal para mensaje transpuesto
+static unsigned char mensajeTranspuesto[104];
+
+// Función para transponer el mensaje (para scroll vertical)
+void transponerMensaje() {
+    for (int bloque = 0; bloque < 13; bloque++) {
+        for (int fila = 0; fila < 8; fila++) {
+            mensajeTranspuesto[bloque * 8 + fila] = 0;
+            for (int col = 0; col < 8; col++) {
+                if (mensajeCompleto[bloque * 8 + col] & (1 << fila)) {
+                    mensajeTranspuesto[bloque * 8 + fila] |= (1 << col);
+                }
+            }
+        }
+    }
+}
+
+// Función que lee cuál botón ha sido presionado, retorna -1 si ninguno
+char leerBotones() {
+    if (!(PINC & BUTTON0)) return 0;
+    if (!(PINC & BUTTON1)) return 1;
+    if (!(PINC & BUTTON2)) return 2;
+    if (!(PINC & BUTTON3)) return 3;
+    return -1;
+}
+
+// Función para mostrar un frame estático durante un tiempo
+void mostrarFrame(unsigned char* frame) {
+    for (int t = 0; t < 50; t++) {
+        for (int i = 0; i < 8; i++) {
+            PORTD = mascaraColumnas[i];
+            PORTB = ~frame[i];
+            _delay_ms(0.07);
+        }
+    }
+}
+
+// Función para animar la persona caminando con 2 cuadros
+void animarCaminata() {
+    for (int rep = 0; rep < 3; rep++) {
+        mostrarFrame(cuadroCaminata1);
+        mostrarFrame(cuadroCaminata2);
+    }
+}
+
+// Función para mostrar un logo estático durante la pausa
+void mostrarLogoPausa() {
+    for (int t = 0; t < 80; t++) {
+        for (int i = 0; i < 8; i++) {
+            PORTD = mascaraColumnas[i];
+            PORTB = ~mensajeCompleto[96 + i];
+            _delay_ms(0.07);
+        }
+    }
+}
+
+// Función de scroll de derecha a izquierda
+void scrollDerechaIzquierda() {
+    for (int i = 0; i < 96; i++) {
+        for (int k = 0; k < 25; k++) {
+            for (int j = 0; j < 8; j++) {
+                PORTD = mascaraColumnas[j];
+                PORTB = ~mensajeCompleto[i + j];
+                _delay_ms(0.07);
+            }
+            if (leerBotones() != -1) return;
+        }
+    }
+    mostrarLogoPausa();
+    animarCaminata();
+}
+
+// Función de scroll de izquierda a derecha
+void scrollIzquierdaDerecha() {
+    unsigned char temp[104];
+    for (int i = 0; i < 13; i++)
+        for (int j = 0; j < 8; j++)
+            temp[(i * 8) + j] = mensajeCompleto[((12 - i) * 8) + j];
+
+    for (int i = 0; i < 96; i++) {
+        for (int k = 0; k < 25; k++) {
+            for (int j = 0; j < 8; j++) {
+                PORTD = mascaraColumnas[j];
+                PORTB = ~temp[(96 - i) + j];
+                _delay_ms(0.07);
+            }
+            if (leerBotones() != -1) return;
+        }
+    }
+    mostrarLogoPausa();
+    animarCaminata();
+}
+
+// Función de scroll de arriba hacia abajo
+void scrollArribaAbajo() {
+    transponerMensaje();
+    unsigned char temp[104];
+    for (int i = 0; i < 13; i++)
+        for (int j = 0; j < 8; j++)
+            temp[(i * 8) + j] = mensajeTranspuesto[((12 - i) * 8) + j];
+
+    for (int i = 0; i < 96; i++) {
+        for (int k = 0; k < 25; k++) {
+            for (int j = 0; j < 8; j++) {
+                PORTB = ~mascaraColumnas[j];
+                PORTD = temp[(96 - i) + j];
+                _delay_ms(0.07);
+            }
+            if (leerBotones() != -1) return;
+        }
+    }
+    mostrarLogoPausa();
+    animarCaminata();
+}
+
+// Función de scroll de abajo hacia arriba
+void scrollAbajoArriba() {
+    transponerMensaje();
+    for (int i = 0; i < 96; i++) {
+        for (int k = 0; k < 25; k++) {
+            for (int j = 0; j < 8; j++) {
+                PORTB = ~mascaraColumnas[j];
+                PORTD = mensajeTranspuesto[i + j];
+                _delay_ms(0.07);
+            }
+            if (leerBotones() != -1) return;
+        }
+    }
+    mostrarLogoPausa();
+    animarCaminata();
+}
+
+int main(void) {
+    // Configuración de los puertos
+    DDRB = 0xFF;
+    DDRD = 0xFF;
+    DDRC &= ~(BUTTON0 | BUTTON1 | BUTTON2 | BUTTON3);
+    PORTC |= (BUTTON0 | BUTTON1 | BUTTON2 | BUTTON3);
+
+    char direccion = 0;  // Dirección inicial para el scroll
+
+    while (1) {
+        switch (direccion) {
+            case 0: scrollDerechaIzquierda(); break;
+            case 1: scrollIzquierdaDerecha(); break;
+            case 2: scrollArribaAbajo(); break;
+            case 3: scrollAbajoArriba(); break;
+        }
+
+        // Lee los botones y cambia la dirección si se presiona otro
+        char nuevaDireccion = leerBotones();
+        if (nuevaDireccion != -1) direccion = nuevaDireccion;
+    }
+}
