@@ -1,17 +1,20 @@
-#define F_CPU 1000000UL
+#define F_CPU 1000000UL  // Definir la frecuencia de la CPU (1 MHz)
 #include <avr/io.h>
 #include <util/delay.h>
 #include <stdlib.h>
 
+// Definir los botones
 #define botonArriba PC0
 #define botonIzquierda PC1
 #define botonDerecha PC2
 #define botonAbajo PC3
 
+// Definir la velocidad de los niveles
 #define VELOCIDAD_FACIL 3000
 #define VELOCIDAD_MEDIA 2000
 #define VELOCIDAD_DIFICIL 1000
 
+// Variables de control
 uint16_t velocidad_actual = VELOCIDAD_FACIL;
 uint16_t puntaje = 0;
 uint8_t nivel = 1;
@@ -19,29 +22,31 @@ uint8_t piedras_esquivadas = 0;
 uint8_t vidas = 3;
 
 uint8_t nave_pos_x = 3;  // Posición de la nave en el eje X (columnas)
-uint8_t nave_pos_y = 7;  // Posición de la nave en el eje Y (filas)
+uint8_t nave_pos_y = 6;  // Posición de la nave en el eje Y (filas), 6 y 7 son las últimas filas
 
+// Definición de caritas
 const uint8_t carita_feliz[] = {0x00, 0x14, 0x20, 0x40, 0x40, 0x20, 0x14, 0x00};
 const uint8_t carita_triste[] = {0x00, 0x64, 0x10, 0x10, 0x10, 0x10, 0x64, 0x00};
 const uint8_t visto[] = {0x00, 0x20, 0x40, 0x20, 0x10, 0x08, 0x04, 0x00};
 
-// Declaración de la función delay_ms() para que esté disponible en todo el código
-void delay_ms(uint16_t ms) {
-    for (uint16_t i = 0; i < ms; i++) {
-        _delay_ms(1);  // Llamar a la función _delay_ms() de AVR
-    }
-}
+// Declaración de funciones
+void mostrar_carita(const uint8_t* carita);
+void mostrar_puntaje(uint16_t puntaje);
+void delay_ms(uint16_t ms);  // Declaración de la función de retardo
 
+// Inicialización de la matriz
 void init_matriz() {
     DDRD = 0xFF;  // Establece el puerto D como salida (Filas)
     DDRB = 0xFF;  // Establece el puerto B como salida (Columnas)
 }
 
+// Limpiar la matriz
 void limpiar_matriz() {
     PORTD = 0x00;  // Apaga todas las filas (en ánodo común, 0 activa)
     PORTB = 0xFF;  // Apaga todas las columnas (en ánodo común, 1 desactiva)
 }
 
+// Mostrar un pixel en la matriz
 void mostrar_pixel(uint8_t fila, uint8_t columna) {
     if (fila < 8 && columna < 8) {
         PORTB = ~(1 << columna);  // Activar la columna (poner 0 para ánodo común)
@@ -51,45 +56,32 @@ void mostrar_pixel(uint8_t fila, uint8_t columna) {
     }
 }
 
-void mostrar_carita(const uint8_t* carita) {
-    for (uint8_t i = 0; i < 8; i++) {
-        // Mostrar cada fila de la carita en la matriz 8x8
-        PORTB = carita[i];
-        delay_ms(200);
-        limpiar_matriz();
-    }
-}
-
-void mostrar_puntaje(uint16_t puntaje) {
-    uint8_t col_puntaje = puntaje % 8;
-    for (uint8_t i = 0; i < 5; i++) {
-        limpiar_matriz();
-        mostrar_pixel(0, col_puntaje);
-        delay_ms(150);
-        limpiar_matriz();
-        delay_ms(150);
-    }
-}
-
+// Mostrar la nave
 void nave() {
-    // Representación de la nave en la matriz como un triángulo
-    uint8_t nave[] = {0x01, 0x03, 0x07, 0x03, 0x01};  // Triángulo simple en la matriz
+    uint8_t nave[2] = {0x80, 0xC0};  // Nave en forma de triángulo pequeño en las dos últimas filas
+
     limpiar_matriz();  // Limpiar la matriz antes de mostrar la nave
-    for (uint8_t i = 0; i < 5; i++) {
-        if (nave_pos_y == i) {
-            PORTB = nave[i];  // Mostrar la nave en la posición Y
-            mostrar_pixel(i, nave_pos_x); // Mostrar en la fila y columna de la nave
-            delay_ms(200);  // Mostrar la nave durante 200 ms
-        }
+
+    // Mostrar la nave solo en las filas 6 y 7
+    if (nave_pos_y == 6) {
+        PORTB = nave[0];  // Mostrar la nave en la fila 6
+        mostrar_pixel(6, nave_pos_x);  // Mostrar en la fila y columna de la nave
     }
+    if (nave_pos_y == 7) {
+        PORTB = nave[1];  // Mostrar la nave en la fila 7
+        mostrar_pixel(7, nave_pos_x);  // Mostrar en la fila y columna de la nave
+    }
+
+    delay_ms(200);  // Mostrar la nave durante 200 ms
 }
 
+// Controlar el movimiento de la nave
 void controlar_nave() {
-    if (PINC & (1 << botonArriba) && nave_pos_y > 0) {
-        nave_pos_y--;  // Mover la nave hacia arriba
+    if (PINC & (1 << botonArriba) && nave_pos_y > 6) {
+        nave_pos_y--;  // Mover la nave hacia arriba (no puede pasar de la fila 6)
     }
     if (PINC & (1 << botonAbajo) && nave_pos_y < 7) {
-        nave_pos_y++;  // Mover la nave hacia abajo (pero no más allá de la última fila)
+        nave_pos_y++;  // Mover la nave hacia abajo (no puede pasar de la fila 7)
     }
     if (PINC & (1 << botonIzquierda) && nave_pos_x > 0) {
         nave_pos_x--;  // Mover la nave a la izquierda
@@ -99,12 +91,13 @@ void controlar_nave() {
     }
 }
 
+// Crear nuevas piedras en la matriz
 void crear_piedra(uint8_t* piedras, uint8_t *pos_x) {
-    // Genera la posición aleatoria de la piedra en la primera fila
     *pos_x = rand() % 8;  // Posición aleatoria en X (columna)
     piedras[*pos_x] = 0x80;  // Activa la columna correspondiente en la fila 0
 }
 
+// Mover las piedras hacia abajo
 void mover_piedra(uint8_t* piedras) {
     uint8_t desplazamiento_aleatorio;
     for (uint8_t i = 0; i < 8; i++) {
@@ -126,6 +119,7 @@ void mover_piedra(uint8_t* piedras) {
     }
 }
 
+// Función de esquivar piedras y actualizar el nivel
 void esquivar() {
     if (piedras_esquivadas % 5 == 0) {
         mostrar_pixel(0, 0);  // Mostrar un "visto"
@@ -165,8 +159,8 @@ void esquivar() {
     }
 }
 
+// Función para mostrar Game Over
 void game_over() {
-    // Función para cuando el jugador pierda
     mostrar_puntaje(puntaje);  // Muestra el puntaje actual
     delay_ms(2000);  // Esperar 2 segundos
     mostrar_carita(carita_triste);  // Muestra carita triste
@@ -180,10 +174,9 @@ void game_over() {
     }
 }
 
+// Función para iniciar el juego
 void iniciar_juego() {
-    // Esperar a que el botón de inicio sea presionado (botón Arriba)
     while (!(PINC & (1 << botonArriba))) {
-        // Espera activa hasta que el botón de inicio sea presionado
         limpiar_matriz();
         delay_ms(100);
     }
@@ -193,6 +186,7 @@ void iniciar_juego() {
     delay_ms(2000);  // Mostrar la nave durante 2 segundos sin movimiento
 }
 
+// Actualizar el juego
 void actualizar_juego() {
     nave();  // Mostrar la nave
     controlar_nave();  // Controlar la nave con los botones
@@ -207,12 +201,38 @@ void actualizar_juego() {
     esquivar();  // Verificar si se esquivaron piedras
 }
 
+// Función de retardo
+void delay_ms(uint16_t ms) {
+    for (uint16_t i = 0; i < ms; i++) {
+        _delay_ms(1);  // Llamar a la función _delay_ms() de AVR
+    }
+}
+
+// Funciones para mostrar caritas y puntaje
+void mostrar_carita(const uint8_t* carita) {
+    for (uint8_t i = 0; i < 8; i++) {
+        PORTB = carita[i];
+        delay_ms(200);
+        limpiar_matriz();
+    }
+}
+
+void mostrar_puntaje(uint16_t puntaje) {
+    uint8_t col_puntaje = puntaje % 8;
+    for (uint8_t i = 0; i < 5; i++) {
+        limpiar_matriz();
+        mostrar_pixel(0, col_puntaje);
+        delay_ms(150);
+        limpiar_matriz();
+        delay_ms(150);
+    }
+}
+
+// Función principal
 int main() {
     init_matriz();
-
-    // Esperar hasta que se presione el botón de inicio
     iniciar_juego();
-    
+
     while (1) {
         actualizar_juego();  // Llamada a la función que actualiza la nave y las piedras
         
