@@ -234,7 +234,7 @@ int main() {
     iniciar_juego();
 
     while (1) {
-        actualizar_juego();  // Llamada a la función que actualiza la nave y las piedras
+        actualizar_juego();  // Llamada a la función
         
         if (vidas == 0) {
             game_over();  // Si el jugador ha perdido, mostrar Game Over
