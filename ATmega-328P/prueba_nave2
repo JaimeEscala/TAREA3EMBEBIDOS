@@ -1,4 +1,4 @@
-#define F_CPU 1000000UL
+/* #define F_CPU 1000000UL
 #include <avr/io.h>
 #include <util/delay.h>
 #include <stdlib.h>
@@ -181,4 +181,247 @@ int main() {
   }
 
   return 0;
+} */
+
+#define VELOCIDAD_FACIL 3
+#define VELOCIDAD_MEDIA 2
+#define VELOCIDAD_DIFICIL 1
+
+#include <avr/io.h>
+#include <util/delay.h>
+#include <stdlib.h>
+
+#define botonArriba PC0
+#define botonIzquierda PC1
+#define botonDerecha PC2
+#define botonAbajo PC3
+
+// Declaración de las funciones antes de su uso
+void mostrar_pixel(uint8_t row, uint8_t col);
+void carita_tristeza();
+void carita_Feliz();
+void init_matriz();
+void limpiar_matriz();
+void mostrar_puntaje(uint16_t puntaje);
+void seleccionar_nivel(uint8_t nivel);
+void delay_variable(uint16_t ms);
+void mover_nave(uint8_t direccion);
+void jugador();
+void generar_piedras();
+void esquivar();
+void mostrar_carita_Feliz();
+void mostrar_carita_triste();
+void reiniciar_juego();
+
+// Declaración de la variable de piedras con un nombre distinto para evitar conflicto
+unsigned char piedras_caidas[8] = {0};  // Matriz de piedras
+
+// Declaración global para la nave
+unsigned char nave[2] = {0xC0, 0xC0};  // La nave está representada como una matriz de 2 bytes
+
+uint16_t velocidad_actual = VELOCIDAD_FACIL;
+uint16_t puntaje = 0;
+uint8_t nivel = 1;
+uint8_t esquivadas = 0;
+uint8_t piedras_contador = 0;
+
+void mostrar_pixel(uint8_t row, uint8_t col) {
+    // Cambiar la asignación de pines según la matriz 8x8
+    // Filas en PD0 a PD7, columnas en PB0 a PB7
+    PORTD = ~(1 << row);  // Activar la fila correspondiente (invirtiendo la señal)
+    PORTB = ~(1 << col);  // Activar la columna correspondiente (invirtiendo la señal)
+    _delay_ms(100);       // Retraso para visualizar el pixel
 }
+
+void carita_tristeza() {
+    unsigned char carita_triste[8] = {
+        0x00, 0x64, 0x10, 0x10, 0x10, 0x10, 0x64, 0x00
+    };
+    for (uint8_t i = 0; i < 8; i++) {
+        PORTD = carita_triste[i];
+        _delay_ms(200);
+    }
+}
+
+void carita_Feliz() {
+    unsigned char carita_feliz[8] = {
+        0x00, 0x14, 0x20, 0x40, 0x40, 0x20, 0x14, 0x00
+    };
+    for (uint8_t i = 0; i < 8; i++) {
+        PORTD = carita_feliz[i];
+        _delay_ms(200);
+    }
+}
+
+void init_matriz() {
+    DDRD = 0xFF;  // Configura todos los pines del puerto D como salida (filas)
+    DDRB = 0xFF;  // Configura todos los pines del puerto B como salida (columnas)
+}
+
+void limpiar_matriz() {
+    PORTD = 0xFF;
+    PORTB = 0xFF;
+}
+
+void mostrar_puntaje(uint16_t puntaje) {
+    uint8_t col_puntaje = puntaje % 8;
+    for (uint8_t i = 0; i < 5; i++) {
+        limpiar_matriz();
+        mostrar_pixel(0, col_puntaje);
+        _delay_ms(150);
+        limpiar_matriz();
+        _delay_ms(150);
+    }
+}
+
+void seleccionar_nivel(uint8_t nivel) {
+    switch (nivel) {
+        case 1:
+            velocidad_actual = VELOCIDAD_FACIL;
+            break;
+        case 2:
+            velocidad_actual = VELOCIDAD_MEDIA;
+            break;
+        case 3:
+            velocidad_actual = VELOCIDAD_DIFICIL;
+            break;
+        default:
+            velocidad_actual = VELOCIDAD_FACIL;
+    }
+}
+
+void delay_variable(uint16_t ms) {
+    for (uint16_t i = 0; i < ms; i++) {
+        _delay_ms(1);
+    }
+}
+
+void mover_nave(uint8_t direccion) {
+    switch(direccion) {
+        case 1: // Mover arriba
+            nave[0] = nave[0] >> 1;
+            nave[1] = nave[1] >> 1;
+            break;
+        case 2: // Mover abajo
+            nave[0] = nave[0] << 1;
+            nave[1] = nave[1] << 1;
+            break;
+        case 3: // Mover izquierda
+            nave[0] = (nave[0] >> 1) | (nave[0] << 7);
+            nave[1] = (nave[1] >> 1) | (nave[1] << 7);
+            break;
+        case 4: // Mover derecha
+            nave[0] = (nave[0] << 1) | (nave[0] >> 7);
+            nave[1] = (nave[1] << 1) | (nave[1] >> 7);
+            break;
+    }
+}
+
+void jugador() {
+    // Mover la nave según los botones
+    if (PINC & (1 << botonArriba)) {
+        mover_nave(1);
+    }
+    if (PINC & (1 << botonAbajo)) {
+        mover_nave(2);
+    }
+    if (PINC & (1 << botonIzquierda)) {
+        mover_nave(3);
+    }
+    if (PINC & (1 << botonDerecha)) {
+        mover_nave(4);
+    }
+}
+
+void generar_piedras() {
+    for (int i = 0; i < 8; i++) {
+        if (rand() % 2) {
+            piedras_caidas[i] = 0x01;
+        }
+    }
+}
+
+void esquivar() {
+    for (uint8_t i = 0; i < 8; i++) {
+        if (piedras_caidas[i] != 0x00) {
+            if (nave[0] != (0x01 << i)) {  // Verifica que la nave no esté en la misma columna de la piedra
+                esquivadas++;
+                puntaje += (nivel == 1) ? 200 : (nivel == 2) ? 500 : 550;
+            }
+        }
+    }
+    
+    if (esquivadas == 5) {
+        esquivadas = 0;
+        nivel++;
+        if (nivel > 3) {
+            mostrar_carita_Feliz();
+            reiniciar_juego();
+        }
+    }
+}
+
+void mostrar_carita_Feliz() {
+    limpiar_matriz();
+    carita_Feliz();  // Llama a la función para mostrar la carita feliz
+    _delay_ms(1000);
+}
+
+void mostrar_carita_triste() {
+    limpiar_matriz();
+    carita_tristeza();  // Llama a la función para mostrar la carita triste
+    _delay_ms(1000);
+}
+
+void reiniciar_juego() {
+    nivel = 1;
+    puntaje = 0;
+    esquivadas = 0;
+    piedras_contador = 0;
+    limpiar_matriz();
+    _delay_ms(1000);
+}
+
+int main() {
+    init_matriz();
+    
+    // Inicializar la nave en la posición inicial
+    nave[0] = 0xC0;  // Posición inicial de la nave (se coloca en las filas 7 y 6)
+    nave[1] = 0xC0;
+
+    while (1) {
+        // Jugador
+        jugador();
+
+        // Mostrar la nave en la matriz
+        for (uint8_t i = 0; i < 8; i++) {
+            if (nave[0] & (0x01 << i)) {
+                mostrar_pixel(i, 0);  // Mostrar la nave en la primera columna
+            }
+            if (nave[1] & (0x01 << i)) {
+                mostrar_pixel(i, 1);  // Mostrar la nave en la segunda columna
+            }
+        }
+
+        // Lógica de caída de piedras y esquivar
+        if (piedras_contador % 5 == 0) {
+            generar_piedras();
+            esquivar();
+        }
+
+        // Mostrar puntaje
+        mostrar_puntaje(puntaje);
+
+        // Lógica de nivel
+        seleccionar_nivel(nivel);
+
+        // Incrementar caída de piedras
+        piedras_contador++;
+
+        // Control de velocidad de caída de las piedras
+        delay_variable(velocidad_actual * 1000);
+    }
+
+    return 0;
+}
+
