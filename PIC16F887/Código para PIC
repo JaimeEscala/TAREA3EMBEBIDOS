@@ -1,0 +1,254 @@
+
+
+unsigned short numSelec = 0;
+unsigned short randomNumber = 1;
+
+unsigned short btnSound1 = 0;
+unsigned short btnSound2 = 0;
+unsigned short btnSound3 = 0;
+
+float notas[] = {
+    523.25, 523.25, 783.99, 783.99, 880.00, 880.00, 783.99, 698.46, 698.46, 659.25, 659.25, 587.33, 587.33, 523.25
+};
+int duraciones[] = {
+    150, 150, 150, 150, 150, 150, 300, 150, 150, 150, 150, 150, 150, 300
+};
+int totalNotas = sizeof(notas)/sizeof(notas[0]);
+int indiceMelodia = 0;
+
+void verificarSonido(){
+  if ((PORTB.F0 == 1) && (PORTB.F1 == 0)) {
+    btnSound1 = 1;
+    btnSound2 = 0;
+    btnSound3 = 0;
+
+  } else if ((PORTB.F0 == 0) && (PORTB.F1 == 1)) {
+    btnSound1 = 0;
+    btnSound2 = 1;
+    btnSound3 = 0;
+
+  } else if ((PORTB.F0 == 1) && (PORTB.F1 == 1)) {
+    btnSound1 = 0;
+    btnSound2 = 0;
+    btnSound3 = 1;
+  } else{
+    btnSound1 = 0;
+    btnSound2 = 0;
+    btnSound3 = 0;
+  }
+}
+
+
+
+void sol(int duration) {
+    Sound_Play(392.00, duration);
+}
+
+void la_sharp(int duration) {
+    Sound_Play(466.16, duration);
+}
+
+void do_prime(int duration) {
+    Sound_Play(523.25, duration);
+}
+
+void re_prime(int duration) {
+    Sound_Play(587.33, duration);
+}
+
+void re_sharp_prime(int duration) {
+    Sound_Play(622.25, duration);
+}
+
+void fa_prime(int duration) {
+    Sound_Play(698.46, duration);
+}
+
+void sol_prime(int duration) {
+    Sound_Play(783.99, duration);
+}
+
+void la_prime(int duration) {
+    Sound_Play(880.00, duration);
+}
+
+void mi(int duration) {
+    Sound_Play(329.63, duration);
+}
+
+void fa(int duration) {
+    Sound_Play(349.23, duration);
+}
+
+
+void si_prime(int duration) {
+    Sound_Play(987.77, duration);
+}
+
+void do_double_prime(int duration) {
+    Sound_Play(1046.50, duration);
+}
+
+
+
+
+void Melody_Win() {
+     do_prime(150);
+     re_prime(150);
+     fa_prime(150);
+     sol_prime(150);
+
+
+     la_prime(100);
+     sol_prime(100);
+     la_prime(100);
+     si_prime(100);
+
+
+     do_double_prime(200);
+     sol_prime(100);
+     do_double_prime(200);
+
+
+     Delay_ms(100);
+
+
+     re_prime(100);
+     fa_prime(100);
+     sol_prime(100);
+     si_prime(100);
+     do_double_prime(300);
+}
+
+
+
+void Melody_Lose() {
+     si_prime(150);
+     sol_prime(150);
+     re_prime(150);
+
+
+     do_prime(200);
+     la_sharp(200);
+     sol(300);
+
+
+     Delay_ms(100);
+
+
+     fa(300);
+     mi(400);
+}
+
+void Melody_Start() {
+     do_prime(100);
+     re_prime(100);
+     fa_prime(100);
+     Delay_ms(60);
+
+
+     sol_prime(100);
+     la_prime(100);
+     si_prime(100);
+
+
+     Delay_ms(80);
+
+
+     do_double_prime(150);
+     re_prime(100);
+     sol_prime(150);
+}
+
+
+void Melody_Level() {
+     sol_prime(120);
+     la_prime(120);
+     si_prime(120);
+
+
+     do_double_prime(200);
+}
+
+void Melody_FinJuego(){
+     do_prime(200);
+     re_prime(200);
+     mi(200);
+     fa_prime(200);
+     sol_prime(200);
+
+     Delay_ms(100);
+
+     sol_prime(150);
+     la_prime(150);
+     si_prime(150);
+     do_double_prime(300);
+
+     Delay_ms(150);
+
+     do_double_prime(150);
+     si_prime(150);
+     do_double_prime(300);
+}
+
+
+
+
+
+void main() {
+int contador = 0;
+  // Configuraciones iniciales
+  ANSEL  = 0;
+  ANSELH = 0;
+  C1ON_bit = 0;
+  C2ON_bit = 0;
+  
+
+
+  TRISB  = 0xFF;
+  TRISC  = 0x00;
+
+
+  Sound_Init(&PORTC, 3);
+
+
+  delay_ms(1000);
+
+
+  while(1){
+      verificarSonido();
+
+      if (btnSound1) {
+          Melody_Win();
+          contador = contador + 1;
+      } else if (btnSound2) {
+          Melody_Lose();
+          if(!contador == 0){
+                       contador = contador - 1;
+          }
+
+      } else if (btnSound3) {
+          Melody_Start();
+
+      } else if(contador == 3){
+        Melody_FinJuego();
+        contador = 0;
+      }
+      else{
+            verificarSonido();
+            //Sound_Play(notas[indiceMelodia], duraciones[indiceMelodia]);
+
+
+            indiceMelodia++;
+            if (indiceMelodia >= totalNotas) {
+                indiceMelodia = 0;
+            }
+            verificarSonido();
+            //delay_ms(10);
+            verificarSonido();
+      }
+      delay_ms(10);
+  }
+
+  
+}
