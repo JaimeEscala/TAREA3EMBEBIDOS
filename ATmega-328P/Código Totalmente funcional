@@ -1,0 +1,245 @@
+#define F_CPU 8000000UL
+#include <avr/io.h>
+#include <util/delay.h>
+#include <stdlib.h>
+#include <time.h>
+
+#define DELAY 1
+#define Y_MAX 8
+#define X_MAX 8
+#define LARGO 64
+
+uint8_t PORT[8] = {1,2,4,8,16,32,64,128};
+uint8_t pantalla[8] = {0};
+uint8_t ganar[8] = {0x00, 0x24, 0x24, 0x00, 0x42, 0x3C, 0x00, 0x00};
+uint8_t perder[8] = {0x00, 0x24, 0x24, 0x00, 0x00, 0x3C, 0x42, 0x00};
+
+typedef struct {
+  int x, y;
+  int modEnX, modEnY;
+  bool on;
+} snake;
+
+typedef struct {
+  int x, y;
+  bool activa;
+} fruta;
+
+snake snk[LARGO];
+fruta frt[5];
+
+uint8_t puntaje = 0;
+bool direccionCambiada = false;
+uint8_t nivel = 1;
+const uint8_t frutas_por_nivel[4] = {0, 3, 4, 5}; // índice 0 no usado
+
+// Señales por PC4 y PC5
+void enviar_senal_ganar() {
+  PORTC = (PORTC & ~((1 << PC4) | (1 << PC5))) | (1 << PC4);
+  _delay_ms(100);
+  PORTC &= ~((1 << PC4) | (1 << PC5));
+}
+
+void enviar_senal_perder() {
+  PORTC = (PORTC & ~((1 << PC4) | (1 << PC5))) | (1 << PC5);
+  _delay_ms(100);
+  PORTC &= ~((1 << PC4) | (1 << PC5));
+}
+
+// Función corregida para la señal de inicio
+void enviar_senal_inicio() {
+  // Limpiar PC4 y PC5 primero
+  PORTC &= ~((1 << PC4) | (1 << PC5));
+  _delay_ms(50);
+
+  // Encender PC4 y PC5 (señal de inicio)
+  PORTC |= (1 << PC4) | (1 << PC5);
+  _delay_ms(300);
+
+  // Apagar PC4 y PC5
+  PORTC &= ~((1 << PC4) | (1 << PC5));
+}
+
+void limpiarPantalla() {
+  for (int i = 0; i < Y_MAX; i++) pantalla[i] = 0;
+}
+
+void generar_frutas(uint8_t cantidad) {
+  for (uint8_t i = 0; i < cantidad; i++) {
+    frt[i].x = rand() % (X_MAX - 1);
+    frt[i].y = rand() % (Y_MAX - 1);
+    frt[i].activa = true;
+  }
+}
+
+void iniciar(int* tamanio) {
+  snk[0].x = 5;
+  snk[0].y = 4;
+  *tamanio = 2;
+  srand(time(NULL));
+  for (int i = 0; i < *tamanio; i++) {
+    snk[i].modEnX = 1;
+    snk[i].modEnY = 0;
+    snk[i].on = 1;
+  }
+  generar_frutas(frutas_por_nivel[nivel]);
+}
+
+void actualizarDatos(int tamanio) {
+  for (int i = 1; i < tamanio; i++) {
+    snk[i].x = snk[i - 1].x - 1;
+    snk[i].y = snk[i - 1].y;
+    snk[i].on = 1;
+  }
+  for (int i = 0; i < tamanio; i++) {
+    if (snk[i].x - 1 >= 0 && snk[i].x - 1 < X_MAX)
+      pantalla[snk[i].y] |= snk[i].on << (7 - (snk[i].x - 1));
+  }
+  for (int i = 0; i < frutas_por_nivel[nivel]; i++) {
+    if (frt[i].activa)
+      pantalla[frt[i].y] |= 1 << (7 - frt[i].x);
+  }
+}
+
+void direcciones(bool* fin) {
+  if (direccionCambiada) return;
+  if (!(PINC & (1 << PC0))) {
+    _delay_ms(20);
+    if (!(PINC & (1 << PC0)) && snk[0].modEnY != 1) {
+      snk[0].modEnX = 0; snk[0].modEnY = -1;
+      direccionCambiada = true;
+    }
+  } else if (!(PINC & (1 << PC1))) {
+    _delay_ms(20);
+    if (!(PINC & (1 << PC1)) && snk[0].modEnY != -1) {
+      snk[0].modEnX = 0; snk[0].modEnY = 1;
+      direccionCambiada = true;
+    }
+  } else if (!(PINC & (1 << PC2))) {
+    _delay_ms(20);
+    if (!(PINC & (1 << PC2)) && snk[0].modEnX != 1) {
+      snk[0].modEnX = -1; snk[0].modEnY = 0;
+      direccionCambiada = true;
+    }
+  } else if (!(PINC & (1 << PC3))) {
+    _delay_ms(20);
+    if (!(PINC & (1 << PC3)) && snk[0].modEnX != -1) {
+      snk[0].modEnX = 1; snk[0].modEnY = 0;
+      direccionCambiada = true;
+    }
+  }
+}
+
+void moverSerpiente(int* tamanio, bool* fin) {
+  if (snk[0].x <= 0 || snk[0].x > X_MAX || snk[0].y < 0 || snk[0].y >= Y_MAX) {
+    *fin = 1;
+    return;
+  }
+
+  for (uint8_t i = 0; i < frutas_por_nivel[nivel]; i++) {
+    if (frt[i].activa && (snk[0].x - 1 == frt[i].x) && (snk[0].y == frt[i].y)) {
+      frt[i].activa = false;
+      (*tamanio)++;
+      snk[*tamanio - 1].on = 1;
+      puntaje++;
+    }
+  }
+}
+
+void update(int tamanio, bool* fin) {
+  limpiarPantalla();
+  for (int i = tamanio - 1; i > 0; i--) {
+    snk[i].x = snk[i - 1].x;
+    snk[i].y = snk[i - 1].y;
+  }
+  snk[0].x += snk[0].modEnX;
+  snk[0].y += snk[0].modEnY;
+
+  for (int i = 0; i < tamanio; i++) {
+    if (snk[i].x - 1 >= 0 && snk[i].x - 1 < X_MAX)
+      pantalla[snk[i].y] |= snk[i].on << (7 - (snk[i].x - 1));
+  }
+
+  for (int i = 0; i < frutas_por_nivel[nivel]; i++) {
+    if (frt[i].activa)
+      pantalla[frt[i].y] |= 1 << (7 - frt[i].x);
+  }
+}
+
+void pantallaWin() {
+  enviar_senal_ganar();
+  while (1) {
+    for (int i = 0; i < 8; i++) {
+      PORTD = PORT[i];
+      PORTB = ~(ganar[i]);
+      _delay_ms(DELAY);
+    }
+  }
+}
+
+void pantallaPerder() {
+  enviar_senal_perder();
+  while (1) {
+    for (int i = 0; i < 8; i++) {
+      PORTD = PORT[i];
+      PORTB = ~(perder[i]);
+      _delay_ms(DELAY);
+    }
+  }
+}
+
+int main() {
+  DDRB = 0xFF;
+  DDRD = 0xFF;
+  DDRC = 0b0110000;  // PC4 y PC5 como salida, PC0-PC3 como entrada
+  PORTC |= 0x0F;     // Pull-ups en PC0-PC3
+
+  // Señal de inicio solo al arrancar el juego
+  enviar_senal_inicio();
+
+  while (nivel <= 3) {
+    int tamanio;
+    bool fin = 0;
+    puntaje = 0;
+    direccionCambiada = false;
+
+    iniciar(&tamanio);
+    actualizarDatos(tamanio);
+
+    uint8_t contador = 0;
+
+    while (!fin && puntaje < frutas_por_nivel[nivel]) {
+      for (int i = 0; i < 8; i++) {
+        PORTD = PORT[i];
+        PORTB = ~(pantalla[i]);
+        _delay_ms(DELAY);
+      }
+
+      contador = (contador + 1) % 255;
+      direcciones(&fin);
+
+      if (contador % (25 - nivel * 5) == 0) {
+        update(tamanio, &fin);
+        moverSerpiente(&tamanio, &fin);
+        direccionCambiada = false;
+      }
+
+      if (fin) {
+        limpiarPantalla();
+        pantallaPerder();  // Señal + pantalla perder
+      }
+    }
+
+    // Se comieron todas las manzanas de nivel, enviamos señal ganar
+    enviar_senal_ganar();
+
+    nivel++;
+
+    if (nivel > 3) {
+      limpiarPantalla();
+      pantallaWin();
+    }
+  }
+
+  return 0;
+}
